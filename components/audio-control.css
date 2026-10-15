@@ -1,0 +1,12 @@
+.header-controls, .joy-topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.music-toggle { position: relative; display: inline-grid; flex: 0 0 40px; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; color: var(--text-muted); background: transparent; opacity: .82; transition: color .25s ease, opacity .25s ease, background .25s ease; }
+.music-toggle:hover, .music-toggle:focus-visible { color: var(--text-primary); opacity: 1; background: rgb(255 255 255 / 7%); }
+.music-toggle[aria-pressed="false"] { opacity: .5; }
+.music-tick { position: absolute; right: 8px; bottom: 9px; width: 2px; height: 2px; border-radius: 50%; background: currentColor; opacity: 0; }
+.music-tick.is-playing { opacity: .72; animation: music-breathe 2.7s ease-in-out infinite; }
+@keyframes music-breathe { 50% { opacity: .24; transform: scale(.75); } }
+@media (max-width: 560px) {
+  .header-controls, .joy-topbar-actions { gap: 0; }
+  .music-toggle { flex-basis: 44px; width: 44px; height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .music-tick.is-playing { animation: none; } }
