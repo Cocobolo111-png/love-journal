@@ -1,3 +1,4 @@
+import { publishedJournal, publication } from './publication.ts';
 import { createDemoJournal } from './demo-data.ts';
 export type MediaItem = {
   id: string;
@@ -69,7 +70,7 @@ export function nextDate(date: string, annual: boolean, now: string) {
   return current < now ? occurrence(year + 1) : current;
 }
 export function initial(): Journal {
-  return createDemoJournal();
+  return publishedJournal ? { version: 1, profile: { a: '你', b: 'TA', since: '' }, entries: [] } : createDemoJournal();
 }
 export function validate(value: unknown): Journal {
   const d = value as Journal;
@@ -129,7 +130,7 @@ export function validate(value: unknown): Journal {
 }
 export function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open('love-journal-demo-love-journal', 2);
+    const r = indexedDB.open(publishedJournal ? 'yuni-love-journal' : 'love-journal-demo-love-journal', 2);
     r.onupgradeneeded = () => {
       if (!r.result.objectStoreNames.contains('journal'))
         r.result.createObjectStore('journal');
@@ -142,18 +143,39 @@ export function openDB(): Promise<IDBDatabase> {
 }
 export async function read(): Promise<Journal> {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
+  const saved = await new Promise<Journal | undefined>((resolve, reject) => {
     const tx = db.transaction('journal', 'readonly');
-    const r = tx.objectStore('journal').get('main');
-    r.onsuccess = () => {
-      try {
-        resolve(r.result ? validate(r.result) : initial());
-      } catch (e) {
-        reject(e);
-      }
+    const request = tx.objectStore('journal').get('main');
+    let result: Journal | undefined;
+    request.onsuccess = () => {
+      try { result = request.result === undefined ? undefined : validate(request.result); }
+      catch (error) { reject(error); }
     };
-    r.onerror = () => reject(r.error);
-    tx.oncomplete = () => db.close();
+    tx.oncomplete = () => { db.close(); resolve(result); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
+    tx.onerror = () => reject(tx.error);
+  });
+  if (saved !== undefined) return saved;
+  if (!publishedJournal) return initial();
+  const seed = validateBackup((await publication()).journal);
+  // Check again inside the write transaction: another tab may have saved while fetching.
+  const target = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = target.transaction(['journal', 'videos'], 'readwrite');
+    const store = tx.objectStore('journal');
+    const request = store.get('main');
+    let result = seed.journal;
+    request.onsuccess = () => {
+      if (request.result !== undefined) {
+        try { result = validate(request.result); } catch { tx.abort(); }
+        return;
+      }
+      store.add(seed.journal, 'main');
+      for (const [id, blob] of seed.videos) tx.objectStore('videos').put(blob, id);
+    };
+    tx.oncomplete = () => { target.close(); resolve(result); };
+    tx.onabort = () => { target.close(); reject(tx.error ?? Error('初始化失败，原数据未覆盖')); };
+    tx.onerror = () => reject(tx.error);
   });
 }
 export async function write(data: Journal, media: VideoChanges = {}) {

@@ -3,6 +3,7 @@
 /* oxlint-disable jsx-a11y/media-has-caption -- user-provided videos have no caption track to attach; playback uses native controls */
 /* oxlint-disable next/no-html-link-for-pages -- vinext's client Link navigation fails for this route; native navigation is verified */
 import { useEffect, useRef, useState } from 'react';
+import { publishedJournal } from '@/lib/publication';
 import {
   Heart,
   House,
@@ -626,7 +627,7 @@ export default function Page() {
           aria-label="返回首页"
         >
           <span>
-            Love Journal<small>OUR WORLD · EST. {data.profile.since?.slice(0, 4) || '∞'}</small>
+            {publishedJournal ? '予你' : 'Love Journal'}<small>OUR WORLD · EST. {data.profile.since?.slice(0, 4) || '∞'}</small>
           </span>
         </button>
         <nav aria-label="主要导航">

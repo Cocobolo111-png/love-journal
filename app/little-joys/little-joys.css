@@ -17,7 +17,7 @@
   z-index: -1;
   height: min(780px, 95svh);
   background: linear-gradient(180deg, rgb(22 24 19 / 38%), rgb(30 31 25 / 66%) 65%, #252720),
-    url('/botanical-demo.png') center 37% / cover no-repeat;
+    var(--journal-botanical-image, url('/botanical-demo.png')) center 37% / cover no-repeat;
   opacity: .55;
   pointer-events: none;
 }

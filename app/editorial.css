@@ -57,7 +57,7 @@ main { width: 100%; min-height: calc(100svh - 145px); padding: 0; }
 .home-main > .error { position: fixed; top: 76px; z-index: 80; left: 5vw; right: 5vw; }
 .portal-journey { --journey: 0; --departure: 0; --parallax: 0; --approach: 0; height: 220svh; position: relative; background: var(--bg-deep); }
 .hero-scene { position: sticky; top: 0; height: 100svh; min-height: 620px; overflow: hidden; isolation: isolate; background: var(--forest); }
-.hero-landscape, .hero-foreground { position: absolute; inset: -4%; background: url('/botanical-demo.png') center 46% / cover no-repeat; transform-origin: 66% 50%; will-change: transform; }
+.hero-landscape, .hero-foreground { position: absolute; inset: -4%; background: var(--journal-botanical-image, url('/botanical-demo.png')) center 46% / cover no-repeat; transform-origin: 66% 50%; will-change: transform; }
 .hero-landscape { transform: scale(calc(1.04 + var(--approach) * .23)); }
 .hero-foreground { mask-image: radial-gradient(ellipse 37% 49% at 73% 49%, transparent 48%, #000 91%); -webkit-mask-image: radial-gradient(ellipse 37% 49% at 73% 49%, transparent 48%, #000 91%); transform: translate3d(calc(var(--parallax) * -1.6% - var(--approach) * 3%), calc(var(--parallax) * 1.3%), 0) scale(calc(1.04 + var(--parallax) * .035 + var(--approach) * .37)); }
 .hero-vignette { position: absolute; inset: 0; background: linear-gradient(90deg, rgb(16 15 9 / 50%) 0%, rgb(22 20 12 / 31%) 34%, transparent 67%), linear-gradient(0deg, rgb(19 17 10 / 58%), transparent 23%, transparent 72%, rgb(18 16 10 / 22%)); pointer-events: none; }
@@ -78,7 +78,7 @@ main { width: 100%; min-height: calc(100svh - 145px); padding: 0; }
 .memory-two { top: 42%; right: 9%; width: 198px; transform: rotate(-5deg); }
 .memory-three { bottom: 20%; right: 3.5%; transform: rotate(3deg); }
 .memory-two img, .memory-image { width: 100%; height: 90px; border-radius: 5px; object-fit: cover; }
-.memory-image { display: block; background: url('/botanical-demo.png') 71% 45% / 260% auto; }
+.memory-image { display: block; background: var(--journal-botanical-image, url('/botanical-demo.png')) 71% 45% / 260% auto; }
 .hero-bottom-line { position: absolute; z-index: 2; left: clamp(26px, 4vw, 72px); right: clamp(26px, 4vw, 72px); bottom: 27px; display: flex; justify-content: space-between; align-items: center; color: #eee8dc; font-size: 9px; letter-spacing: .18em; opacity: calc(1 - var(--departure)); }
 .hero-bottom-line button { display: flex; align-items: center; gap: 12px; border: 0; color: inherit; background: transparent; letter-spacing: inherit; }
 .world-menu { position: relative; padding: clamp(75px, 10vw, 155px) clamp(24px, 5.6vw, 105px) 72px; background: radial-gradient(circle at 65% 10%, rgb(91 74 53 / 25%), transparent 38%), var(--bg-deep); }
@@ -100,7 +100,7 @@ main { width: 100%; min-height: calc(100svh - 145px); padding: 0; }
 .gateway-words { padding: 30px 0 30px 8%; flex-direction: column; justify-content: center; align-items: flex-start; gap: 22px; background: linear-gradient(120deg, rgb(111 73 58 / 31%), transparent 80%); }
 .gateway-words small { font-size: 10px; letter-spacing: .15em; color: #c6b6ad; }
 .gateway-words i { font-family: 'Songti SC', 'STSong', var(--font-display); font-size: clamp(23px, 2.3vw, 33px); line-height: 1.6; font-weight: 400; }
-.gateway-photo { position: relative; background: url('/botanical-demo.png') 75% 45% / cover no-repeat; }
+.gateway-photo { position: relative; background: var(--journal-botanical-image, url('/botanical-demo.png')) 75% 45% / cover no-repeat; }
 .gateway-photo::after { content: ''; position: absolute; inset: 0; background: linear-gradient(0deg, rgb(12 18 14 / 22%), transparent); }
 .gateway-photo img { width: 100%; height: 100%; object-fit: cover; transition: transform .7s var(--motion-ease); }
 .gateway-video-label { position: absolute; z-index: 1; left: 20px; bottom: 18px; display: inline-flex; gap: 9px; align-items: center; color: var(--text-primary); font-size: 11px; letter-spacing: .18em; }

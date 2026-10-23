@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { MusicToggle, useAudioSystem } from '@/components/audio-provider';
 import { today } from '@/lib/journal';
 import {
-  couponIcons, loadLittleJoys, redeemCoupon, saveLittleJoys, visibleMessages,
+  couponIcons, readLittleJoys, loadLittleJoys, redeemCoupon, saveLittleJoys, visibleMessages,
   type Coupon, type CouponIcon, type LittleJoys, type Message,
 } from '@/lib/little-joys';
 import './little-joys.css';
@@ -67,8 +67,9 @@ export default function LittleJoysPage() {
     queueMicrotask(() => {
       if (!active) return;
       setDisplayDay(today());
-      try { setData(loadLittleJoys(window.localStorage)); }
-      catch (cause) { setError(cause instanceof Error ? cause.message : '小确幸暂时无法读取。'); }
+      readLittleJoys(window.localStorage)
+        .then((value) => { if (active) setData(value); })
+        .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : '小确幸暂时无法读取。'); });
     });
     return () => { active = false; };
   }, []);

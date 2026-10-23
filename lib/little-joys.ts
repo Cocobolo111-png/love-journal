@@ -1,5 +1,6 @@
+import { publishedJournal, publishedLittleJoys } from './publication.ts';
 import { demoMessages, demoCoupons } from './demo-data.ts';
-export const LITTLE_JOYS_KEY = 'love-journal-demo-little-joys-v1';
+export const LITTLE_JOYS_KEY = publishedJournal ? 'yuni-little-joys-v1' : 'love-journal-demo-little-joys-v1';
 
 export type Message = {
   id: string;
@@ -106,6 +107,7 @@ export function loadLittleJoys(storage: KeyValueStore, timestamp = Date.now()): 
     }
     catch { throw Error('小确幸的本地内容无法读取；为保护原数据，未重新初始化。'); }
   }
+  if (publishedJournal) throw Error('发布内容尚未载入，请刷新后重试。');
   const defaults = createDefaultLittleJoys(timestamp);
   storage.setItem(LITTLE_JOYS_KEY, JSON.stringify(defaults));
   return defaults;
@@ -143,4 +145,13 @@ export function visibleMessages(messages: Message[], day: string): Message[] {
     Number(b.pinned) - Number(a.pinned) ||
     (a.pinned && b.pinned ? a.createdAt - b.createdAt : hash(day + a.id) - hash(day + b.id)) ||
     a.id.localeCompare(b.id));
+}
+
+// Fetch only when this browser has no local content. Existing edits always win.
+export async function readLittleJoys(storage: KeyValueStore): Promise<LittleJoys> {
+  if (!publishedJournal || storage.getItem(LITTLE_JOYS_KEY) !== null) return loadLittleJoys(storage);
+  const value = await publishedLittleJoys();
+  const seed = validateLittleJoys(value ?? { version: 1, messages: [], coupons: [] });
+  if (storage.getItem(LITTLE_JOYS_KEY) !== null) return loadLittleJoys(storage);
+  return saveLittleJoys(storage, seed);
 }

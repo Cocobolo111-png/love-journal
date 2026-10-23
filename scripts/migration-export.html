@@ -1,0 +1,34 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Love Journal 完整迁移备份</title>
+<style>body{font:18px system-ui;max-width:650px;margin:12vh auto;padding:24px}button{font:inherit;padding:16px}pre{white-space:pre-wrap}</style>
+<h1>完整迁移备份</h1><p>只读取当前地址的原手账，包含照片、视频、留言和兑换券。不会修改或删除任何记录。</p>
+<button id="export">导出全部真实内容</button><pre id="status"></pre>
+<script type="module">
+const status = document.querySelector('#status');
+const request = (r) => new Promise((resolve,reject) => {r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
+document.querySelector('#export').onclick=async()=>{
+ try {
+ status.textContent='正在读取原有手账和影像，请保留此页面…';
+ const names=await indexedDB.databases();
+ if(!names.some(x=>x.name==='yuni-love-journal')) throw Error('当前地址没有原手账数据库，请确认原浏览器与完整地址。');
+ const db=await request(indexedDB.open('yuni-love-journal'));
+ if(!db.objectStoreNames.contains('journal')) throw Error('原数据库存储区：'+Array.from(db.objectStoreNames).join(',')+'；请保留原数据。');
+ const hasVideos=db.objectStoreNames.contains('videos');
+ const tx=db.transaction(hasVideos?['journal','videos']:['journal'],'readonly');
+ const done=new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error)});
+ const journalPromise=request(tx.objectStore('journal').get('main'));
+ const keysPromise=hasVideos?request(tx.objectStore('videos').getAllKeys()):Promise.resolve([]);
+ const valuesPromise=hasVideos?request(tx.objectStore('videos').getAll()):Promise.resolve([]);
+ const [journal,keys,values]=await Promise.all([journalPromise,keysPromise,valuesPromise]);
+ await done;db.close();
+ if(!journal) throw Error('当前地址没有已保存的真实手账，未导出空白替代数据。');
+ const media={};
+ for(let i=0;i<keys.length;i++)media[keys[i]]=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.readAsDataURL(values[i])});
+ const raw=localStorage.getItem('yuni-little-joys-v1');
+ const littleJoys=raw===null?null:JSON.parse(raw);
+ const data={format:'love-journal-publication-v1',sourceOrigin:location.origin,exportedAt:new Date().toISOString(),journal:{...journal,media},littleJoys};
+ const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+ const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='love-journal-complete-migration.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
+ status.textContent=`备份已生成：${journal.entries.length} 条手账，${keys.length} 段视频，${littleJoys?.messages.length??0} 条留言，${littleJoys?.coupons.length??0} 种兑换券；${(blob.size/1024/1024).toFixed(1)} MB。原数据未修改。`;
+ }catch(error){status.textContent=error.message}
+};
+</script></html>
