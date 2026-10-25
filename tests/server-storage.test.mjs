@@ -64,3 +64,10 @@ test('storage service starts correctly when invoked through a release symlink',a
   child.once('exit',code=>{clearTimeout(timeout);reject(Error('unexpected service exit '+code));});
  });
 });
+test('storage helpers can be imported by a maintenance command on stdin',async()=>{
+ const {spawn}=await import('node:child_process');
+ const child=spawn(process.execPath,['--input-type=module','-'],{stdio:['pipe','pipe','pipe']});let output='',errors='';
+ child.stdout.on('data',chunk=>output+=chunk);child.stderr.on('data',chunk=>errors+=chunk);
+ const ended=new Promise(resolve=>child.once('exit',resolve));child.stdin.end(`await import(${JSON.stringify(new URL('../server/storage.mjs',import.meta.url).href)}); console.log('maintenance-import-ok');`);
+ assert.equal(await ended,0,errors);assert.match(output,/maintenance-import-ok/);
+});

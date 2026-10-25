@@ -185,7 +185,8 @@ export function createStorageServer({ root, origin }) {
     }
   });
 }
-if(process.argv[1] && fileURLToPath(import.meta.url)===await fs.realpath(process.argv[1])) {
+const invokedFile = process.argv[1] && process.argv[1] !== '-' ? await fs.realpath(process.argv[1]).catch(() => null) : null;
+if(invokedFile === fileURLToPath(import.meta.url)) {
   const root=process.env.LOVE_JOURNAL_STORAGE_DIR;if(!root)throw Error('缺少数据目录');
   const server=createStorageServer({root,origin:process.env.LOVE_JOURNAL_ORIGIN});
   server.requestTimeout=120000; server.headersTimeout=15000;
