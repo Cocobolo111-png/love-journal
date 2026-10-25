@@ -14,6 +14,9 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { MusicToggle, useAudioSystem } from '@/components/audio-provider';
 import { today } from '@/lib/journal';
+import { publishedJournal } from '@/lib/publication';
+import { syncServerJoys, storageStatus, withBrowserStorageLock } from '@/lib/server-storage';
+import { ServerStorageControl } from '@/components/server-storage-control';
 import {
   couponIcons, readLittleJoys, loadLittleJoys, redeemCoupon, saveLittleJoys, visibleMessages,
   type Coupon, type CouponIcon, type LittleJoys, type Message,
@@ -60,6 +63,7 @@ export default function LittleJoysPage() {
   const [quantityMotion, setQuantityMotion] = useState<{ id: string; from: number; to: number } | null>(null);
   const quantityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const redeemLock = useRef(false);
+  const persistLock = useRef(false);
   const pageRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -112,29 +116,36 @@ export default function LittleJoysPage() {
     };
   }, [data, messagePage]);
 
-  function persist(next: LittleJoys, effect: 'confirm' | 'redeem' = 'confirm'): boolean {
+  async function persist(next: LittleJoys, effect: 'confirm' | 'redeem' = 'confirm'): Promise<boolean> {
+    if (persistLock.current) return false;
+    persistLock.current = true;
     try {
-      setData(saveLittleJoys(window.localStorage, next));
+      const saved = await withBrowserStorageLock('joys', async () => {
+        const local = saveLittleJoys(window.localStorage, next);
+        const value = publishedJournal ? await syncServerJoys(local) : local;
+        return saveLittleJoys(window.localStorage, value);
+      });
+      setData(saved);
       if (effect === 'redeem') audio.playRedeem();
       else audio.playConfirm();
       setMessagePage(0);
-      setError('');
+      setError(publishedJournal && storageStatus('joys').phase !== 'synced' ? '已保存在本机；此设备尚未授权服务器保存。' : '');
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存失败，请检查浏览器的本地存储空间。');
       return false;
-    }
+    } finally { persistLock.current = false; }
   }
-  function saveMessage(event: SyntheticEvent<HTMLFormElement>) {
+  async function saveMessage(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!data || !messageDraft) return;
     const next = { ...messageDraft, content: messageDraft.content.trim(), signature: messageDraft.signature.trim(), updatedAt: Date.now() };
     if (!next.content) return;
     const exists = data.messages.some((message) => message.id === next.id);
-    if (persist({ ...data, messages: exists ? data.messages.map((message) => message.id === next.id ? next : message) : [...data.messages, next] }))
+    if (await persist({ ...data, messages: exists ? data.messages.map((message) => message.id === next.id ? next : message) : [...data.messages, next] }))
       setEditorView('list');
   }
-  function saveCoupon(event: SyntheticEvent<HTMLFormElement>) {
+  async function saveCoupon(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!data || !couponDraft) return;
     const next = { ...couponDraft, title: couponDraft.title.trim(), description: couponDraft.description.trim(), updatedAt: Date.now() };
@@ -144,23 +155,23 @@ export default function LittleJoysPage() {
       return;
     }
     const exists = data.coupons.some((coupon) => coupon.id === next.id);
-    if (persist({ ...data, coupons: exists ? data.coupons.map((coupon) => coupon.id === next.id ? next : coupon) : [...data.coupons, next] }))
+    if (await persist({ ...data, coupons: exists ? data.coupons.map((coupon) => coupon.id === next.id ? next : coupon) : [...data.coupons, next] }))
       setEditorView('list');
   }
-  function changeMessage(id: string, changes: Partial<Message>) {
+  async function changeMessage(id: string, changes: Partial<Message>) {
     if (!data) return;
-    persist({ ...data, messages: data.messages.map((message) => message.id === id ? { ...message, ...changes, updatedAt: Date.now() } : message) });
+    await persist({ ...data, messages: data.messages.map((message) => message.id === id ? { ...message, ...changes, updatedAt: Date.now() } : message) });
   }
-  function changeCoupon(id: string, changes: Partial<Coupon>) {
+  async function changeCoupon(id: string, changes: Partial<Coupon>) {
     if (!data) return;
-    persist({ ...data, coupons: data.coupons.map((coupon) => coupon.id === id ? { ...coupon, ...changes, updatedAt: Date.now() } : coupon) });
+    await persist({ ...data, coupons: data.coupons.map((coupon) => coupon.id === id ? { ...coupon, ...changes, updatedAt: Date.now() } : coupon) });
   }
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!data || !deletion) return;
     const next = deletion.kind === 'message'
       ? { ...data, messages: data.messages.filter((message) => message.id !== deletion.id) }
       : { ...data, coupons: data.coupons.filter((coupon) => coupon.id !== deletion.id) };
-    if (persist(next)) { setDeletion(null); setEditorView('list'); }
+    if (await persist(next)) { setDeletion(null); setEditorView('list'); }
   }
   function openMessage(message?: Message) { setMessageDraft(message ? { ...message } : emptyMessage()); setEditorView('message'); }
   function openCoupon(coupon?: Coupon) { setCouponDraft(coupon ? { ...coupon } : emptyCoupon()); setEditorView('coupon'); setError(''); }
@@ -169,7 +180,7 @@ export default function LittleJoysPage() {
     setConfirmingCoupon(false);
     setDetailCouponId(id);
   }
-  function confirmRedeem() {
+  async function confirmRedeem() {
     if (!detailCouponId || redeemLock.current) return;
     redeemLock.current = true;
     try {
@@ -177,7 +188,7 @@ export default function LittleJoysPage() {
       const coupon = current.coupons.find((item) => item.id === detailCouponId);
       if (!coupon) throw Error('这张券暂时无法兑换。');
       const next = redeemCoupon(current, detailCouponId);
-      if (!persist(next, 'redeem')) {
+      if (!await persist(next, 'redeem')) {
         setCouponError('兑换未保存，数量保持不变。请检查浏览器存储空间。');
         return;
       }
@@ -210,7 +221,8 @@ export default function LittleJoysPage() {
 
       <div id="little-joys-content" className="joy-content">
         {error && <p className="joy-error" role="alert">{error}</p>}
-        <section className="joy-messages" aria-labelledby="joy-messages-title">
+        <ServerStorageControl kind="joys" />
+      <section className="joy-messages" aria-labelledby="joy-messages-title">
           <div className="joy-section-heading">
             <span className="joy-kicker">MESSAGES</span>
             <h1 id="joy-messages-title">路过你的生活，留句话</h1>

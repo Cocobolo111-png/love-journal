@@ -1,4 +1,5 @@
-import { publishedJournal, publishedLittleJoys } from './publication.ts';
+import { readServer, syncServerJoys, pendingServerSave, withBrowserStorageLock } from './server-storage.ts';
+import { publishedJournal } from './publication.ts';
 import { demoMessages, demoCoupons } from './demo-data.ts';
 export const LITTLE_JOYS_KEY = publishedJournal ? 'yuni-little-joys-v1' : 'love-journal-demo-little-joys-v1';
 
@@ -148,10 +149,14 @@ export function visibleMessages(messages: Message[], day: string): Message[] {
 }
 
 // Fetch only when this browser has no local content. Existing edits always win.
-export async function readLittleJoys(storage: KeyValueStore): Promise<LittleJoys> {
-  if (!publishedJournal || storage.getItem(LITTLE_JOYS_KEY) !== null) return loadLittleJoys(storage);
-  const value = await publishedLittleJoys();
-  const seed = validateLittleJoys(value ?? { version: 1, messages: [], coupons: [] });
-  if (storage.getItem(LITTLE_JOYS_KEY) !== null) return loadLittleJoys(storage);
-  return saveLittleJoys(storage, seed);
+export function readLittleJoys(storage: KeyValueStore): Promise<LittleJoys> {return publishedJournal ? withBrowserStorageLock('joys',()=>readLittleJoysUnlocked(storage)) : readLittleJoysUnlocked(storage);}
+async function readLittleJoysUnlocked(storage: KeyValueStore): Promise<LittleJoys> {
+  if (!publishedJournal) return loadLittleJoys(storage);
+  const local = storage.getItem(LITTLE_JOYS_KEY) === null ? undefined : loadLittleJoys(storage);
+  let data = validateLittleJoys(await readServer('joys', local));
+  saveLittleJoys(storage, data);
+  if (pendingServerSave('joys')) {
+    try { data = await syncServerJoys(data); saveLittleJoys(storage, data); } catch { /* Keep the pending local copy. */ }
+  }
+  return data;
 }

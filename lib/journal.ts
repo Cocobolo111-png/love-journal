@@ -1,4 +1,5 @@
-import { publishedJournal, publication } from './publication.ts';
+import { readServer, syncServerJournal, pendingServerSave, serverVideo, withBrowserStorageLock } from './server-storage.ts';
+import { publishedJournal } from './publication.ts';
 import { createDemoJournal } from './demo-data.ts';
 export type MediaItem = {
   id: string;
@@ -35,6 +36,8 @@ const VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 export const MAX_BACKUP_BYTES = 500 * 1024 * 1024;
 export const MAX_MEDIA_ITEMS = 12;
+const serverImage = /^\/api\/storage\/media\/[a-f0-9]{64}$/;
+const imageReference = (value: string) => imageDataUrl.test(value) || (publishedJournal && serverImage.test(value));
 const imageDataUrl = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 export function entryMedia(entry: Entry): MediaItem[] {
   if (entry.media) return entry.media;
@@ -110,7 +113,7 @@ export function validate(value: unknown): Journal {
       !Array.isArray(e.checks) ||
       !e.checks.every((c) => typeof c === 'string' && validDate(c)) ||
       (e.image &&
-        !imageDataUrl.test(e.image)) ||
+        !imageReference(e.image)) ||
       (e.media !== undefined &&
         (!['diary', 'photo'].includes(e.kind) || !Array.isArray(e.media) || e.media.length > MAX_MEDIA_ITEMS))
     )
@@ -119,7 +122,7 @@ export function validate(value: unknown): Journal {
     for (const item of entryMedia(e)) {
       if (!item || typeof item.id !== 'string' || !item.id || mediaIds.has(item.id) ||
         !['image', 'video'].includes(item.type) || typeof item.poster !== 'string' ||
-        (item.poster && !imageDataUrl.test(item.poster)) ||
+        (item.poster && !imageReference(item.poster)) ||
         (item.type === 'image' && !item.poster) ||
         (item.duration !== undefined && (!Number.isFinite(item.duration) || item.duration < 0)))
         throw Error('备份中存在无效媒体');
@@ -141,44 +144,34 @@ export function openDB(): Promise<IDBDatabase> {
     r.onerror = () => reject(r.error);
   });
 }
-export async function read(): Promise<Journal> {
+export function read(): Promise<Journal> { return publishedJournal ? withBrowserStorageLock('journal', readUnlocked) : readUnlocked(); }
+async function readUnlocked(): Promise<Journal> {
   const db = await openDB();
   const saved = await new Promise<Journal | undefined>((resolve, reject) => {
     const tx = db.transaction('journal', 'readonly');
     const request = tx.objectStore('journal').get('main');
     let result: Journal | undefined;
-    request.onsuccess = () => {
-      try { result = request.result === undefined ? undefined : validate(request.result); }
-      catch (error) { reject(error); }
-    };
+    request.onsuccess = () => { try { result = request.result === undefined ? undefined : validate(request.result); } catch (error) { reject(error); } };
     tx.oncomplete = () => { db.close(); resolve(result); };
     tx.onabort = () => { db.close(); reject(tx.error); };
     tx.onerror = () => reject(tx.error);
   });
-  if (saved !== undefined) return saved;
-  if (!publishedJournal) return initial();
-  const seed = validateBackup((await publication()).journal);
-  // Check again inside the write transaction: another tab may have saved while fetching.
-  const target = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = target.transaction(['journal', 'videos'], 'readwrite');
-    const store = tx.objectStore('journal');
-    const request = store.get('main');
-    let result = seed.journal;
-    request.onsuccess = () => {
-      if (request.result !== undefined) {
-        try { result = validate(request.result); } catch { tx.abort(); }
-        return;
-      }
-      store.add(seed.journal, 'main');
-      for (const [id, blob] of seed.videos) tx.objectStore('videos').put(blob, id);
-    };
-    tx.oncomplete = () => { target.close(); resolve(result); };
-    tx.onabort = () => { target.close(); reject(tx.error ?? Error('初始化失败，原数据未覆盖')); };
-    tx.onerror = () => reject(tx.error);
-  });
+  if (!publishedJournal) return saved ?? initial();
+  let data = validate(await readServer('journal', saved));
+  await writeLocal(data);
+  if (pendingServerSave('journal')) {
+    try { data = await syncServerJournal(data, {}, readVideo); await writeLocal(data); } catch { /* Local pending copy remains intact. */ }
+  }
+  return data;
 }
-export async function write(data: Journal, media: VideoChanges = {}) {
+export function write(data: Journal, media: VideoChanges = {}): Promise<Journal> { return publishedJournal ? withBrowserStorageLock('journal', () => writeUnlocked(data, media)) : writeUnlocked(data, media); }
+async function writeUnlocked(data: Journal, media: VideoChanges): Promise<Journal> {
+  await writeLocal(data, media);
+  if (!publishedJournal) return data;
+  try { const saved = await syncServerJournal(data, media, readVideo); await writeLocal(saved); return saved; }
+  catch { return data; } // The status UI distinguishes local backup from confirmed server storage.
+}
+async function writeLocal(data: Journal, media: VideoChanges = {}) {
   validate(data);
   const wanted = new Set(data.entries.flatMap((e) => entryMedia(e).filter((m) => m.type === 'video').map((m) => m.id)));
   for (const [id, blob] of media.put ?? []) {
@@ -217,11 +210,17 @@ export async function write(data: Journal, media: VideoChanges = {}) {
   });
 }
 export async function readVideo(id: string): Promise<Blob | null> {
+  const remote = publishedJournal ? serverVideo(id) : undefined;
+  if (remote && !pendingServerSave('journal')) { const response = await fetch(remote); if (!response.ok) throw Error('服务器视频暂时无法读取'); return response.blob(); }
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('videos', 'readonly');
     const r = tx.objectStore('videos').get(id);
-    r.onsuccess = () => resolve(r.result instanceof Blob ? r.result : null);
+    r.onsuccess = () => {
+      if (r.result instanceof Blob) resolve(r.result);
+      else if (remote) fetch(remote).then(response => { if (!response.ok) throw Error('服务器视频暂时无法读取'); return response.blob(); }).then(resolve, reject);
+      else resolve(null);
+    };
     r.onerror = () => reject(r.error);
     tx.oncomplete = () => db.close();
   });
@@ -322,7 +321,15 @@ export async function createBackup(data: Journal): Promise<Blob> {
       reader.readAsDataURL(blob);
     });
   }
-  const backup = new Blob([JSON.stringify({ ...data, media })], { type: 'application/json' });
+  const complete = structuredClone(data);
+  const inline = async (value: string) => {
+    if (!value.startsWith('/api/storage/media/')) return value;
+    const response = await fetch(value); if (!response.ok) throw Error('照片读取失败，未生成不完整备份');
+    const blob = await response.blob();
+    return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); });
+  };
+  for (const entry of complete.entries) { entry.image = await inline(entry.image); for (const item of entry.media ?? []) item.poster = await inline(item.poster); }
+  const backup = new Blob([JSON.stringify({ ...complete, media })], { type: 'application/json' });
   if (backup.size > MAX_BACKUP_BYTES)
     throw Error('备份超过 500 MB，请先减少视频数量或体积');
   return backup;

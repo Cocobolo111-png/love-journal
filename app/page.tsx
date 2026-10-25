@@ -4,6 +4,8 @@
 /* oxlint-disable next/no-html-link-for-pages -- vinext's client Link navigation fails for this route; native navigation is verified */
 import { useEffect, useRef, useState } from 'react';
 import { publishedJournal } from '@/lib/publication';
+import { storageStatus } from '@/lib/server-storage';
+import { ServerStorageControl } from '@/components/server-storage-control';
 import {
   Heart,
   House,
@@ -183,9 +185,10 @@ export default function Page() {
     setBusy(true);
     setError('');
     try {
-      await write(next, media);
-      setData(next);
-      setNotice(msg);
+      const saved = await write(next, media);
+      setData(saved);
+      const status = publishedJournal ? storageStatus('journal') : null;
+      setNotice(status ? (status.phase === 'synced' ? '已存入服务器' : '已保存在本机，尚未存入服务器') : msg);
       audio.playConfirm();
       return true;
     } catch {
@@ -663,7 +666,7 @@ export default function Page() {
         <div className="status-strip" aria-label="手账状态">
           <span>两个人，一本慢慢写的生活手账</span>
           <span className="local-dot">
-            {ready ? '本地私藏' : '正在打开手账…'}
+            {ready ? (publishedJournal ? <ServerStorageControl kind="journal" compact /> : '本地私藏') : '正在打开手账…'}
           </span>
         </div>
         {error && (
@@ -704,7 +707,7 @@ export default function Page() {
                     <small>{upcoming?.next || '等待写下'}</small>
                   </button>
                 </div>
-                <div className="hero-bottom-line"><span>PRIVATE · STORED LOCALLY</span><button onClick={enterWorld}>SCROLL TO ENTER <ArrowDown size={15} /></button><span>01 — 05</span></div>
+                <div className="hero-bottom-line"><span>{publishedJournal ? 'OUR WORLD · KEPT TOGETHER' : 'PRIVATE · STORED LOCALLY'}</span><button onClick={enterWorld}>SCROLL TO ENTER <ArrowDown size={15} /></button><span>01 — 05</span></div>
               </div>
             </section>
             <section id="world-menu" className="world-menu">
@@ -1326,9 +1329,10 @@ export default function Page() {
                 </Button>
               </form>
               <div className="backup">
+                <ServerStorageControl kind="journal" />
                 <h3>把记忆好好保存</h3>
                 <p>
-                  记录、照片和视频只存在当前浏览器。清理网站数据会移除它们；导出的完整备份会包含视频，文件可能较大。
+                  {publishedJournal ? '授权设备保存的内容会存入服务器，浏览器保留缓存。未完成上传的内容只保存在本机；请保留备份。' : '记录、照片和视频只存在当前浏览器。清理网站数据会移除它们；导出的完整备份会包含视频，文件可能较大。'}
                 </p>
                 <div>
                   <Button variant="outline" onClick={backup} disabled={busy}>
